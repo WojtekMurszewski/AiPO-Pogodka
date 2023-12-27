@@ -1,7 +1,7 @@
 import requests
-import googletrans
+import os
 import tkinter as tk
-from tkinter import Label, StringVar
+from tkinter import Label, StringVar, messagebox
 from googletrans import Translator
 
 class WeatherApp:
@@ -11,46 +11,78 @@ class WeatherApp:
         self.font_style = ("Arial", 12)
 
         self.root = tk.Tk()
-        self.root.title("Weather App")
+        self.root.title("Pogódka")
 
         self.create_widgets()
 
+        # Sprawdzenie czy istnieje ostatnio wprowadzana lokalizacja 
+        if os.path.exists("last_location.txt"):
+            self.load_last_location()
+            self.get_weather()
+
     def get_weather(self):
-        location = self.entry.get()
-        result = requests.get(f'http://api.openweathermap.org/data/2.5/weather?q={location}&units=metric&appid={self.api_key}').json()
+        while True:
+            location = self.entry.get()
 
-        city_name_translation = self.translate_text(result['name'])
-        description_translation = self.translate_text(result['weather'][0]['description'])
+            # Zapisywanie ostatnio wprowadzonej lokalizacji do pliku
+            with open("last_location.txt", "w") as file:
+                file.write(location)
 
+            result = requests.get(f'http://api.openweathermap.org/data/2.5/weather?q={location}&units=metric&appid={self.api_key}').json()
 
-        self.city_name_var.set(f"Miasto: {city_name_translation}")
-        timestamp_label = tk.Label(self.root, text=self.convert_timestamp(result['dt']), font=self.font_style)
-        self.timestamp_var.set(f"Czas pomiaru: {timestamp_label.cget('text')}")
-        self.description_var.set(f"Opis: {description_translation}")
-        self.temperature_var.set(f"Temperatura: {round(result['main']['temp'])}°C")
-        self.feels_like_var.set(f"Odczuwalna: {round(result['main']['feels_like'])}°C")
-        self.high_var.set(f"Najwyższa: {round(result['main']['temp_max'])}°C")
-        self.low_var.set(f"Najniższa: {round(result['main']['temp_min'])}°C")
-        self.humidity_var.set(f"Wilgotność: {result['main']['humidity']}%")
-        self.wind_speed_var.set(f"Wiatr: {result['wind']['speed']} m/s")
-        self.cloudiness_var.set(f"Zachmurzenie: {result['clouds']['all']}%")
-        rain = result.get('rain', {}).get('1h', 0) 
-        self.rain_var.set(f"Opady deszczu (1h): {rain} mm")
-        sunrise_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunrise']), font=self.font_style)
-        self.sunrise_var.set(f"Wschód: {sunrise_label.cget('text')}")
-        sunset_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunset']), font=self.font_style)
-        self.sunset_var.set(f"Zachód: {sunset_label.cget('text')}")
+            if result.get('cod') == '404':
+                print("Nieprawidłowa lokalizacja!")
+                messagebox.showerror("Błąd", "Nieprawidłowa lokalizacja! Spróbuj ponownie.")
+                return
+
+            city_name_translation = self.translate_text(result['name'])
+            description_translation = self.translate_text(result['weather'][0]['description'])
+
+            self.city_name_var.set(f"Miasto: {city_name_translation}")
+            timestamp_label = tk.Label(self.root, text=self.convert_timestamp(result['dt']), font=self.font_style)
+            self.timestamp_var.set(f"Czas pomiaru: {timestamp_label.cget('text')}")
+            self.description_var.set(f"Opis: {description_translation}")
+            self.temperature_var.set(f"Temperatura: {round(result['main']['temp'])}°C")
+            self.feels_like_var.set(f"Odczuwalna: {round(result['main']['feels_like'])}°C")
+            self.high_var.set(f"Najwyższa: {round(result['main']['temp_max'])}°C")
+            self.low_var.set(f"Najniższa: {round(result['main']['temp_min'])}°C")
+            self.humidity_var.set(f"Wilgotność: {result['main']['humidity']}%")
+            self.wind_speed_var.set(f"Wiatr: {result['wind']['speed']} m/s")
+            self.cloudiness_var.set(f"Zachmurzenie: {result['clouds']['all']}%")
+            rain = result.get('rain', {}).get('1h', 0) 
+            self.rain_var.set(f"Opady deszczu (1h): {rain} mm")
+            sunrise_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunrise']), font=self.font_style)
+            self.sunrise_var.set(f"Wschód: {sunrise_label.cget('text')}")
+            sunset_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunset']), font=self.font_style)
+            self.sunset_var.set(f"Zachód: {sunset_label.cget('text')}")
+
+            break
+
+    def load_last_location(self):
+        # Wczytywanie ostatnio wprowadzonej lokalizacji z pliku
+        with open("last_location.txt", "r") as file:
+            last_location = file.read()
+            self.entry = tk.Entry(self.root)
+            self.entry.insert(0, last_location)
+            self.entry.grid(row=0, column=1, padx=10, pady=10)
+
+            self.button = tk.Button(self.root, text="Ok", command=self.get_weather)
+            self.button.grid(row=0, column=2, padx=10, pady=10)
 
     def create_widgets(self):
         # Tworzenie etykiet i pól tekstowych
         self.label = Label(self.root, text="Podaj lokalizację:")
         self.label.grid(row=0, column=0, padx=10, pady=10)
 
-        self.entry = tk.Entry(self.root)
-        self.entry.grid(row=0, column=1, padx=10, pady=10)
+        # Sprawdź, czy plik istnieje
+        if os.path.exists("last_location.txt"):
+            self.load_last_location()
+        else:
+            self.entry = tk.Entry(self.root)
+            self.entry.grid(row=0, column=1, padx=10, pady=10)
 
-        self.button = tk.Button(self.root, text="Ok", command=self.get_weather)
-        self.button.grid(row=0, column=2, padx=10, pady=10)
+            self.button = tk.Button(self.root, text="Ok", command=self.get_weather)
+            self.button.grid(row=0, column=2, padx=10, pady=10)
 
         # Tworzenie zmiennych StringVar do przechowywania danych o pogodzie
         self.city_name_var = StringVar()
@@ -81,17 +113,16 @@ class WeatherApp:
         Label(self.root, textvariable=self.rain_var, font=self.font_style).grid(row=11, column=0, columnspan=3, pady=10) 
         Label(self.root, textvariable=self.sunrise_var, font=self.font_style).grid(row=12, column=0, columnspan=3, pady=10)
         Label(self.root, textvariable=self.sunset_var, font=self.font_style).grid(row=13, column=0, columnspan=3, pady=10)
-    
 
     def convert_timestamp(self, timestamp):
+        # Konwertowanie formatu czasowego na Godzina:Minuta Dzień-Miesiąc-Rok
         from datetime import datetime
         return datetime.fromtimestamp(timestamp).strftime('%H:%M %d-%m-%Y')
     
     def translate_text(self, text):
+        # Funkcja tłumaczenia
         translated = self.translator.translate(text, dest='pl')
         return translated.text
-
-
 
     def run(self):
         self.root.mainloop()
