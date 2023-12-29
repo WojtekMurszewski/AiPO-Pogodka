@@ -2,12 +2,11 @@ import requests
 import os
 import tkinter as tk
 from tkinter import Label, StringVar, messagebox
-from googletrans import Translator
+from collections import Counter
 
 class WeatherApp:
     def __init__(self):
         self.api_key = "b44ecf95a35963e3701437527cec0f2a"
-        self.translator = Translator()
         self.font_style = ("Arial", 12)
 
         self.root = tk.Tk()
@@ -21,42 +20,84 @@ class WeatherApp:
             self.get_weather()
 
     def get_weather(self):
-        while True:
-            location = self.entry.get()
+        location = self.entry.get()
 
-            # Zapisywanie ostatnio wprowadzonej lokalizacji do pliku
-            with open("last_location.txt", "w") as file:
-                file.write(location)
+        # Zapisywanie ostatnio wprowadzonej lokalizacji do pliku
+        with open("last_location.txt", "w") as file:
+            file.write(location)
 
-            result = requests.get(f'http://api.openweathermap.org/data/2.5/weather?q={location}&units=metric&appid={self.api_key}').json()
+        # Pobranie aktualnej pogody
+        current_weather_url = f'http://api.openweathermap.org/data/2.5/weather?q={location}&units=metric&lang=pl&appid={self.api_key}'
+        current_result = requests.get(current_weather_url).json()
 
-            if result.get('cod') == '404':
-                print("Nieprawidłowa lokalizacja!")
-                messagebox.showerror("Błąd", "Nieprawidłowa lokalizacja! Spróbuj ponownie.")
-                return
+        # Pobranie prognozy na kolejne dni
+        forecast_url = f'http://api.openweathermap.org/data/2.5/forecast?q={location}&units=metric&lang=pl&appid={self.api_key}'
+        forecast_result = requests.get(forecast_url).json()
 
-            city_name_translation = self.translate_text(result['name'])
-            description_translation = self.translate_text(result['weather'][0]['description'])
+        if current_result.get('cod') == '404' or forecast_result.get('cod') == '404':
+            print("Nieprawidłowa lokalizacja!")
+            messagebox.showerror("Błąd", "Nieprawidłowa lokalizacja! Spróbuj ponownie.")
+            return
 
-            self.city_name_var.set(f"Miasto: {city_name_translation}")
-            timestamp_label = tk.Label(self.root, text=self.convert_timestamp(result['dt']), font=self.font_style)
-            self.timestamp_var.set(f"Czas pomiaru: {timestamp_label.cget('text')}")
-            self.description_var.set(f"Opis: {description_translation}")
-            self.temperature_var.set(f"Temperatura: {round(result['main']['temp'])}°C")
-            self.feels_like_var.set(f"Odczuwalna: {round(result['main']['feels_like'])}°C")
-            self.high_var.set(f"Najwyższa: {round(result['main']['temp_max'])}°C")
-            self.low_var.set(f"Najniższa: {round(result['main']['temp_min'])}°C")
-            self.humidity_var.set(f"Wilgotność: {result['main']['humidity']}%")
-            self.wind_speed_var.set(f"Wiatr: {result['wind']['speed']} m/s")
-            self.cloudiness_var.set(f"Zachmurzenie: {result['clouds']['all']}%")
-            rain = result.get('rain', {}).get('1h', 0) 
-            self.rain_var.set(f"Opady deszczu (1h): {rain} mm")
-            sunrise_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunrise']), font=self.font_style)
-            self.sunrise_var.set(f"Wschód: {sunrise_label.cget('text')}")
-            sunset_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunset']), font=self.font_style)
-            self.sunset_var.set(f"Zachód: {sunset_label.cget('text')}")
+        # Wyświetlanie aktualnej pogody
+        self.display_current_weather(current_result)
 
-            break
+        # Wyświetlanie prognozy na kolejne dni
+        self.display_5_day_forecast(forecast_result)
+
+    def display_current_weather(self, result):
+        self.city_name_var.set(f"Miasto: {result['name']}")
+        timestamp_label = tk.Label(self.root, text=self.convert_timestamp(result['dt']), font=self.font_style)
+        self.timestamp_var.set(f"Czas pomiaru: {timestamp_label.cget('text')}")
+        self.description_var.set(f"Opis: {result['weather'][0]['description']}")
+        self.temperature_var.set(f"Temperatura: {round(result['main']['temp'])}°C")
+        self.feels_like_var.set(f"Odczuwalna: {round(result['main']['feels_like'])}°C")
+        self.high_var.set(f"Najwyższa: {round(result['main']['temp_max'])}°C")
+        self.low_var.set(f"Najniższa: {round(result['main']['temp_min'])}°C")
+        self.humidity_var.set(f"Wilgotność: {result['main']['humidity']}%")
+        self.wind_speed_var.set(f"Wiatr: {result['wind']['speed']} m/s")
+        self.cloudiness_var.set(f"Zachmurzenie: {result['clouds']['all']}%")
+        rain = result.get('rain', {}).get('1h', 0) 
+        self.rain_var.set(f"Opady deszczu (1h): {rain} mm")
+        sunrise_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunrise']), font=self.font_style)
+        self.sunrise_var.set(f"Wschód: {sunrise_label.cget('text')}")
+        sunset_label = tk.Label(self.root, text=self.convert_timestamp(result['sys']['sunset']), font=self.font_style)
+        self.sunset_var.set(f"Zachód: {sunset_label.cget('text')}")
+
+    def display_5_day_forecast(self, result):
+        forecast_list = result.get('list', [])
+        daily_temps = {}  # Słownik do przechowywania uśrednionych temperatur dla każdego dnia
+        daily_descriptions = {}  # Słownik do przechowywania opisów pogody dla każdego dnia
+
+        for forecast in forecast_list:
+            date = self.convert_timestamp(forecast['dt']).split()[1]  # Pobieranie tylko daty
+            if date not in daily_temps:
+                daily_temps[date] = {'day': [], 'night': []}
+                daily_descriptions[date] = []
+
+            if '06:00:00' <= self.convert_timestamp(forecast['dt']).split()[0] < '18:00:00':
+                daily_temps[date]['day'].append(forecast['main']['temp'])
+            else:
+                daily_temps[date]['night'].append(forecast['main']['temp'])
+
+            daily_descriptions[date].append(forecast['weather'][0]['description'])
+
+        # Obliczanie uśrednionych temperatur dla każdego dnia
+        averaged_temps_day = {date: sum(temps['day']) / len(temps['day']) for date, temps in daily_temps.items()}
+        averaged_temps_night = {date: sum(temps['night']) / len(temps['night']) for date, temps in daily_temps.items()}
+
+        # Wybieranie najczęściej występującego opisu pogody dla każdego dnia
+        most_common_descriptions = {date: Counter(desc).most_common(1)[0][0] for date, desc in daily_descriptions.items()}
+
+        # Wyświetlanie uśrednionych temperatur i opisów dla każdego dnia
+        row_counter = len(daily_temps) + 14
+        for date in sorted(daily_temps.keys()):
+            day_label = tk.Label(self.root, text=f"{date}: "
+                                                f"Temperatura w dzień: {round(averaged_temps_day[date])}°C, "
+                                                f"Temperatura w nocy: {round(averaged_temps_night[date])}°C, "
+                                                f"Opis: {most_common_descriptions[date]}", font=self.font_style)
+            day_label.grid(row=row_counter, column=0, columnspan=3, pady=10)
+            row_counter += 1
 
     def load_last_location(self):
         # Wczytywanie ostatnio wprowadzonej lokalizacji z pliku
@@ -118,11 +159,6 @@ class WeatherApp:
         # Konwertowanie formatu czasowego na Godzina:Minuta Dzień-Miesiąc-Rok
         from datetime import datetime
         return datetime.fromtimestamp(timestamp).strftime('%H:%M %d-%m-%Y')
-    
-    def translate_text(self, text):
-        # Funkcja tłumaczenia
-        translated = self.translator.translate(text, dest='pl')
-        return translated.text
 
     def run(self):
         self.root.mainloop()
