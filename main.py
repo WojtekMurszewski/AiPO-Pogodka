@@ -11,118 +11,62 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
 import styles
 from collections import OrderedDict
+from io import BytesIO
+
 
 class WeatherData:
     def __init__(self, api_key, ui):
         self.api_key = api_key
-        self.current_weather_data = {}
-        self.forecast_weather_data = OrderedDict()
-        self.current_weather_data['icon_url'] = None
-        self.weather_charts = WeatherCharts(self)
         self.ui = ui
+        self.current_weather = CurrentWeatherData(api_key)
+        self.forecast_weather = ForecastWeatherData(api_key)
+        self.current_weather_data = {}  
+        self.forecast_weather_data = {}
 
-    def get_weather(self, location):
+    def get_weather(self, location=None):
         if location is None:
             location = self.ui.entry.get()
 
         with open("last_location.txt", "w") as file:
             file.write(location)
-            
-        # Pobranie danych o bieżącej pogodzie
-        current_weather_url = f'http://api.openweathermap.org/data/2.5/weather?q={location}&units=metric&lang=pl&appid={self.api_key}'
-        current_result = requests.get(current_weather_url).json()
 
-        # Pobranie prognozy pogody na 5 dni
-        forecast_url = f'http://api.openweathermap.org/data/2.5/forecast?q={location}&units=metric&lang=pl&appid={self.api_key}'
-        forecast_result = requests.get(forecast_url).json()
+        current_result, forecast_result = self.fetch_weather_data(location)
 
-        # Sprawdzenie, czy dane zostały pobrane poprawnie
-        if current_result.get('cod') == '404' or forecast_result.get('cod') == '404':
-            print("Nieprawidłowa lokalizacja!")
-            messagebox.showerror("Błąd", "Nieprawidłowa lokalizacja! Spróbuj ponownie.")
+        if not self.validate_weather_data(current_result, forecast_result):
             return
 
-        # Przetworzenie danych o bieżącej pogodzie i prognozie
-        self.current_weather_data = self.process_current_data(current_result)
-        self.forecast_weather_data = self.process_forecast_data(forecast_result)
+        self.process_weather_data(current_result, forecast_result)
 
-        # Dodanie aktualnej daty do wykresu
-        self.weather_charts = WeatherCharts(self)
-        current_date = datetime.now().strftime('%A')
-        self.weather_charts.plot_temperature_chart(current_date)
-
-        # Wyświetlenie danych o bieżącej pogodzie i prognozie
-        self.ui.display_current_weather()
-        self.ui.display_5_day_forecast()
-
-        # Update the weather icon
-        icon_url = self.current_weather_data.get('icon_url')
-        if icon_url:
-            self.ui.update_icon(icon_url)
-
-        # Wświetlenie danych w konsoli
-        self.print_weather_data()
-
-        # Dodanie aktualnej daty do wykresu
-        current_date = datetime.now().strftime('%Y-%m-%d')
-        self.weather_charts.plot_temperature_chart(current_date)
-
-    def process_current_data(self, result):
-        # Przetwarzanie danych o bieżącej pogodzie
-        current_data = {}
-
-        current_data['city_name'] = result['name']
-        icon_id = result['weather'][0]['icon']
-        icon_url = f"https://openweathermap.org/img/wn/{icon_id}@2x.png"
-        self.update_icon(icon_url)
-        current_data['timestamp'] = self.convert_timestamp(result['dt'])
-        current_data['description'] = result['weather'][0]['description']
-        current_data['temperature'] = round(result['main']['temp'])
-        current_data['feels_like'] = round(result['main']['feels_like'])
-        current_data['high'] = round(result['main']['temp_max'])
-        current_data['low'] = round(result['main']['temp_min'])
-        current_data['humidity'] = result['main']['humidity']
-        current_data['wind_speed'] = result['wind']['speed']
-        current_data['cloudiness'] = result['clouds']['all']
-        current_data['rain'] = result.get('rain', {}).get('1h', 0)
-        current_data['sunrise'] = self.convert_timestamp(result['sys']['sunrise'])
-        current_data['sunset'] = self.convert_timestamp(result['sys']['sunset'])
-
-        return current_data
-
-    def process_forecast_data(self, result):
-        # Przetwarzanie danych o prognozie pogody na 5 dni
-        forecast_list = result.get('list', {})
-        forecast_data = OrderedDict()
-
-        for forecast in forecast_list:
-            date = self.convert_timestamp(forecast['dt']).split()[1]
-            time = self.convert_timestamp(forecast['dt']).split()[0]
-
-            if date not in forecast_data:
-                forecast_data[date] = {}
-
-            if time not in forecast_data[date]:
-                forecast_data[date][time] = {}
-
-            forecast_data[date][time]['timestamp'] = self.convert_timestamp(forecast['dt'])
-            forecast_data[date][time]['description'] = forecast['weather'][0]['description']
-            forecast_data[date][time]['temperature'] = round(forecast['main']['temp'])
-            forecast_data[date][time]['feels_like'] = round(forecast['main']['feels_like'])
-            forecast_data[date][time]['high'] = round(forecast['main']['temp_max'])
-            forecast_data[date][time]['low'] = round(forecast['main']['temp_min'])
-            forecast_data[date][time]['humidity'] = forecast['main']['humidity']
-            forecast_data[date][time]['wind_speed'] = forecast['wind']['speed']
-            forecast_data[date][time]['cloudiness'] = forecast['clouds']['all']
-            forecast_data[date][time]['rain'] = forecast.get('rain', {}).get('1h', 0)
-
-        return forecast_data
+        return self.get_current_weather_data(), self.get_forecast_weather_data()
     
-    def convert_timestamp(self, timestamp):
-        # Konwersja znacznika czasu na czytelną datę i godzinę
-        from datetime import datetime
-        return datetime.fromtimestamp(timestamp).strftime('%H:%M %A %d-%m-%Y')
-    
+    def fetch_weather_data(self, location):
+        current_weather_url = f'http://api.openweathermap.org/data/2.5/weather?q={location}&units=metric&lang=en&appid={self.api_key}'
+        current_result = requests.get(current_weather_url).json()
+
+        forecast_url = f'http://api.openweathermap.org/data/2.5/forecast?q={location}&units=metric&lang=en&appid={self.api_key}'
+        forecast_result = requests.get(forecast_url).json()
+
+        return current_result, forecast_result
+
+    def validate_weather_data(self, current_result, forecast_result):
+        if current_result.get('cod') == '404' or forecast_result.get('cod') == '404':
+            print("Nieprawidłowa lokalizacja!")
+            return False
+        return True
+
+    def process_weather_data(self, current_result, forecast_result):
+        try:
+            self.current_weather_data = self.current_weather.process_current_data(current_result)
+            self.forecast_weather_data = self.forecast_weather.process_forecast_data(forecast_result)
+        except Exception as e:
+            print(f"Błąd podczas przetwarzania danych: {e}")
+
+    def get_current_weather_data(self):
+        return self.current_weather_data
+
+    def get_forecast_weather_data(self):
+        return self.forecast_weather_data
+
     def print_weather_data(self):
         # Wyświetlanie danych w konsoli
         print("-------- Bieżąca Pogoda --------")
@@ -141,12 +85,71 @@ class WeatherData:
             print("******************************")
         print("--------------------------------")
 
-    def update_icon(self, icon_url):
-        # Metoda do aktualizacji ikony pogody
-        self.current_weather_data['icon_url'] = icon_url
+    @staticmethod
+    def convert_timestamp(timestamp):
+        return datetime.fromtimestamp(timestamp).strftime('%H:%M %A %d-%m-%Y')
 
-class WeatherCharts: 
 
+class CurrentWeatherData:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        
+    def process_current_data(self, result):
+        # Przetwarzanie danych o bieżącej pogodzie
+        current_data = {}
+
+        icon_id = result['weather'][0]['icon']
+        current_data['city_name'] = result['name']
+        current_data['icon_url'] = f"https://openweathermap.org/img/wn/{icon_id}@2x.png"
+        current_data['timestamp'] = WeatherData.convert_timestamp(result['dt'])
+        current_data['description'] = result['weather'][0]['description']
+        current_data['temperature'] = round(result['main']['temp'])
+        current_data['feels_like'] = round(result['main']['feels_like'])
+        current_data['high'] = round(result['main']['temp_max'])
+        current_data['low'] = round(result['main']['temp_min'])
+        current_data['humidity'] = result['main']['humidity']
+        current_data['wind_speed'] = result['wind']['speed']
+        current_data['cloudiness'] = result['clouds']['all']
+        current_data['rain'] = result.get('rain', {}).get('1h', 0)
+        current_data['sunrise'] = WeatherData.convert_timestamp(result['sys']['sunrise'])
+        current_data['sunset'] = WeatherData.convert_timestamp(result['sys']['sunset'])
+
+        return current_data
+
+class ForecastWeatherData:
+    def __init__(self, api_key):
+        self.api_key = api_key
+
+    def process_forecast_data(self, result):
+        # Przetwarzanie danych o prognozie pogody na 5 dni
+        forecast_list = result.get('list', {})
+        forecast_data = OrderedDict()
+
+        for forecast in forecast_list:
+            date = WeatherData.convert_timestamp(forecast['dt']).split()[1]
+            time = WeatherData.convert_timestamp(forecast['dt']).split()[0]
+
+            if date not in forecast_data:
+                forecast_data[date] = {}
+
+            if time not in forecast_data[date]:
+                forecast_data[date][time] = {}
+
+            forecast_data[date][time]['timestamp'] = WeatherData.convert_timestamp(forecast['dt'])
+            forecast_data[date][time]['description'] = forecast['weather'][0]['description']
+            forecast_data[date][time]['temperature'] = round(forecast['main']['temp'])
+            forecast_data[date][time]['feels_like'] = round(forecast['main']['feels_like'])
+            forecast_data[date][time]['high'] = round(forecast['main']['temp_max'])
+            forecast_data[date][time]['low'] = round(forecast['main']['temp_min'])
+            forecast_data[date][time]['humidity'] = forecast['main']['humidity']
+            forecast_data[date][time]['wind_speed'] = forecast['wind']['speed']
+            forecast_data[date][time]['cloudiness'] = forecast['clouds']['all']
+            forecast_data[date][time]['rain'] = forecast.get('rain', {}).get('1h', 0)
+
+        return forecast_data
+
+
+class WeatherCharts:
     def __init__(self, weather_data):
         self.weather_data = weather_data
         self.canvas = None
@@ -154,12 +157,13 @@ class WeatherCharts:
 
     def plot_temperature_chart(self, date):
         try:
-            hours = list(self.weather_data.forecast_weather_data[datetime.now().strftime('%A')].keys())
+            forecast_data = self.weather_data.get_forecast_weather_data()
+            hours = list(forecast_data[date].keys())
             print(hours)
 
             hour_objects = [datetime.strptime(hour, '%H:%M') for hour in hours]
 
-            temperatures = [data['temperature'] for data in self.weather_data.forecast_weather_data[datetime.now().strftime('%A')].values()]
+            temperatures = [data['temperature'] for data in forecast_data[datetime.now().strftime('%A')].values()]
             print(temperatures)
 
             fig, ax = plt.subplots(figsize=(6, 2))
@@ -176,14 +180,15 @@ class WeatherCharts:
             print(f"Hours:{hour_objects}")
 
             for i, txt in enumerate(temperatures):
-                ax.annotate(txt, (hour_objects[i], temperatures[i]), textcoords="offset points", xytext=(0, 10), ha='center')
+                ax.annotate(txt, (hour_objects[i], temperatures[i]), textcoords="offset points", xytext=(0, 10),
+                            ha='center')
 
             ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=len(hour_objects)))
             ax.set_xticks(hour_objects)
             ax.set_xticklabels([hour.strftime('%H:%M') for hour in hour_objects], rotation=0, ha='center')
 
             # Zmiana koloru tła
-            fig.set_facecolor('#7EA3CC') #7EA3CC
+            fig.set_facecolor('#7EA3CC')  # 7EA3CC
             ax.set_facecolor('#7EA3CC')
 
             ax.set_yticklabels([])
@@ -210,11 +215,12 @@ class WeatherCharts:
 
     def display_temperature_chart_for_day(self, day):
         try:
-            hours = list(self.weather_data.forecast_weather_data[day].keys())
+            forecast_data = self.weather_data.get_forecast_weather_data()
+            hours = list(forecast_data[day].keys())
 
             hour_objects = [datetime.strptime(hour, '%H:%M') for hour in hours]
 
-            temperatures = [data['temperature'] for data in self.weather_data.forecast_weather_data[day].values()]
+            temperatures = [data['temperature'] for data in forecast_data[day].values()]
 
             if self.canvas:
                 self.canvas.get_tk_widget().destroy()  # Usuń aktualny wykres
@@ -231,7 +237,8 @@ class WeatherCharts:
             ax.fill_between(hour_objects, -100, temperatures, color='#201335', alpha=0.3)
 
             for i, txt in enumerate(temperatures):
-                ax.annotate(txt, (hour_objects[i], temperatures[i]), textcoords="offset points", xytext=(0, 10), ha='center')
+                ax.annotate(txt, (hour_objects[i], temperatures[i]), textcoords="offset points", xytext=(0, 10),
+                            ha='center')
 
             ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=len(hour_objects)))
             ax.set_xticks(hour_objects)
@@ -262,12 +269,14 @@ class WeatherCharts:
 
 
 class WeatherAppUI:
-    def __init__(self, root, weather_data, font_style):
+    def __init__(self, root, weather_data, weather_charts):
         self.root = root
         self.weather_data = weather_data
-        self.font_style = font_style
-        self.weather_data = weather_data
-
+        self.weather_charts = weather_charts
+        self.icon_label = tk.Label(self.root, bg="white")
+        # Styl czcionki dla interfejsu
+        self.font_style = ("Arial", 12)
+        
     def create_widgets(self):
         # Tworzenie widżetów interfejsu użytkownika
         if os.path.exists("last_location.txt"):
@@ -276,7 +285,7 @@ class WeatherAppUI:
             self.entry = ttk.Entry(self.root, font=('Helvetica', 14))
             self.entry.grid(row=0, column=0, sticky="w")
 
-            self.button = ttk.Button(self.root, text="Szukaj", command=lambda: self.weather_data.get_weather(self.entry.get()))
+            self.button = ttk.Button(self.root, text="Szukaj", command=lambda: self.handle_search())
             self.button.grid(row=0, column=1, sticky="w")
 
             self.icon_label = tk.Label(self.root, bg="white")
@@ -316,25 +325,30 @@ class WeatherAppUI:
         self.weather_charts.plot_temperature_chart(datetime.now().strftime('%A'))
 
     def display_current_weather(self):
+        current_data = self.weather_data.get_current_weather_data()
+
         # Wyświetlanie danych o bieżącej pogodzie na interfejsie użytkownika
-        self.city_name_var.set(f"{self.weather_data.current_weather_data['city_name']}")
-        self.timestamp_var.set(f"Aktualna pogoda\n{self.weather_data.current_weather_data['timestamp']}")
-        print(f"seimano:{self.weather_data.current_weather_data['timestamp']}")
-        self.description_var.set(f"{self.weather_data.current_weather_data['description']}")
-        self.temperature_var.set(f"{self.weather_data.current_weather_data['temperature']}°C")
-        self.feels_like_var.set(f"Temp. odczuwalna {self.weather_data.current_weather_data['feels_like']}°C")
-        self.high_var.set(f"Najwyższa temp.\n{self.weather_data.current_weather_data['high']}°C")
-        self.low_var.set(f"Najniższa temp.\n{self.weather_data.current_weather_data['low']}°C")
-        self.humidity_var.set(f"Wilgotność\n{self.weather_data.current_weather_data['humidity']}%")
-        self.wind_speed_var.set(f"Wiatr\n{self.weather_data.current_weather_data['wind_speed']} m/s")
-        self.cloudiness_var.set(f"Zachmurzenie\n{self.weather_data.current_weather_data['cloudiness']}%")
-        self.rain_var.set(f"Opady deszczu (1h)\n{self.weather_data.current_weather_data['rain']} mm")
-        sunrise_time = datetime.strptime(self.weather_data.current_weather_data['sunrise'], '%H:%M %A %d-%m-%Y').strftime('%H:%M')
-        self.sunrise_var.set(f"Wschód\n{sunrise_time}")
-        sunset_time = datetime.strptime(self.weather_data.current_weather_data['sunset'], '%H:%M %A %d-%m-%Y').strftime('%H:%M')
-        self.sunset_var.set(f"Zachód\n{sunset_time}")
+        self.city_name_var.set(f"{current_data['city_name']}")
+        self.timestamp_var.set(f"Current weather\n{current_data['timestamp']}")
+        self.description_var.set(f"{current_data['description']}")
+        self.temperature_var.set(f"{current_data['temperature']}°C")
+        self.feels_like_var.set(f"Feels like {current_data['feels_like']}°C")
+        self.high_var.set(f"Highest temp.\n{current_data['high']}°C")
+        self.low_var.set(f"Lowest temp.\n{current_data['low']}°C")
+        self.humidity_var.set(f"Humidity\n{current_data['humidity']}%")
+        self.wind_speed_var.set(f"Wind speed\n{current_data['wind_speed']} m/s")
+        self.cloudiness_var.set(f"Cloudiness\n{current_data['cloudiness']}%")
+        self.rain_var.set(f"Rain (1h)\n{current_data['rain']} mm")
+        sunrise_time = datetime.strptime(current_data['sunrise'], '%H:%M %A %d-%m-%Y').strftime('%H:%M')
+        self.sunrise_var.set(f"Sunrise\n{sunrise_time}")
+        sunset_time = datetime.strptime(current_data['sunset'], '%H:%M %A %d-%m-%Y').strftime('%H:%M')
+        self.sunset_var.set(f"Sunset\n{sunset_time}")
+        # Wyświetlania ikony
+        self.update_icon(current_data['icon_url'])     
 
     def display_5_day_forecast(self):
+        forecast_data = self.weather_data.get_forecast_weather_data()
+        
         # Stworzenie ramki dla prognozy na pięć dni
         forecast_frame = ttk.Frame(self.root, **styles.FRAME_STYLE)
         forecast_frame.grid(row=7, column=0, columnspan=5, pady=10, sticky="nsew")
@@ -342,7 +356,7 @@ class WeatherAppUI:
         daily_temps = {}  # Słownik do przechowywania uśrednionych temperatur dla każdego dnia
         daily_descriptions = {}  # Słownik do przechowywania opisów pogody dla każdego dnia
 
-        for date, hourly_data in self.weather_data.forecast_weather_data.items():
+        for date, hourly_data in forecast_data.items():
             daily_temps[date] = {'day': [], 'night': []}
             daily_descriptions[date] = []
 
@@ -368,70 +382,76 @@ class WeatherAppUI:
         for i, date in enumerate(daily_temps.keys()):
             day_label = tk.Label(forecast_frame, text=f"{date}\n"
                                                     f"{most_common_descriptions[date]}\n"
-                                                    f"Śr. temp. w dzień: {round(averaged_temps_day[date])}°C\n"
-                                                    f"Śr. temp. w nocy: {round(averaged_temps_night[date])}°C",
+                                                    f"Avg. temp. during day: {round(averaged_temps_day[date])}°C\n"
+                                                    f"Avg. temp. during night: {round(averaged_temps_night[date])}°C",
                                                     font=self.font_style)
             day_label.grid(row=0, column=i, pady=10)
 
-            button = ttk.Button(forecast_frame, text="Pokaż wykres", command=lambda d=date: self.weather_charts.display_temperature_chart_for_day(d))
+            button = ttk.Button(forecast_frame, text="Show chart", command=lambda d=date: self.weather_charts.display_temperature_chart_for_day(d))
             button.grid(row=1, column=i, pady=5)
-
+        
     def update_icon(self, icon_url):
-        # Pobranie obrazu z URL
-        print("Test update")
-        image = self.get_image_from_url(icon_url)
-
-        # Aktualizacja ikony
-        if image:
-            self.icon_image = image
-            self.icon_label.config(image=self.icon_image, bg = "#7EA3CC")
-            self.icon_label.grid(row=3, column=0, padx=10, pady=10, sticky="w")
-
-    def get_image_from_url(self, url):
         try:
-            print("Test get")
-            # Pobranie obrazu z URL
-            response = requests.get(url, stream=True)
-            image = Image.open(response.raw)
-            photo = ImageTk.PhotoImage(image)
-
-            return photo
+            response = requests.get(icon_url)
+            if response.status_code == 200:
+                # Pobierz obraz z odpowiedzi
+                icon_data = BytesIO(response.content)
+                icon_image = Image.open(icon_data)
+                # Skonwertuj obraz do formatu PhotoImage
+                image = ImageTk.PhotoImage(icon_image)
+                # Aktualizacja ikony
+                if image:
+                    self.icon_image = image
+                    self.icon_label.config(image=self.icon_image, bg = "#7EA3CC")
+                    self.icon_label.grid(row=3, column=0, padx=10, pady=10, sticky="w")
+            else:
+                print(f"Błąd pobierania ikony: {response.status_code}")
         except Exception as e:
-            print(f"Błąd podczas pobierania obrazu: {e}")
-            return None
+            print(f"Błąd podczas aktualizacji ikony: {e}")
 
     def load_last_location(self):
         # Wczytywanie ostatniej lokalizacji z pliku
         with open("last_location.txt", "r") as file:
             last_location = file.read()
-            self.entry = ttk.Entry(self.root, font=('Helvetica', 14))
+            self.entry = ttk.Entry(self.root, font=self.font_style)
             self.entry.insert(0, last_location)
             self.entry.grid(row=0, column=0, sticky="w")
 
-            self.button = ttk.Button(self.root, text="Szukaj", command=lambda: self.weather_data.get_weather(self.entry.get()))
+            self.button = ttk.Button(self.root, text="Search", command=lambda: self.handle_search())
             self.button.grid(row=0, column=1, sticky="w")
-            
+
+    def handle_search(self):
+        # Metoda obsługująca przycisk "Search"
+        location = self.entry.get()
+        if location:
+            self.weather_data.get_weather(location)
+            self.display_current_weather()
+            self.display_5_day_forecast()
+            self.weather_charts.plot_temperature_chart(datetime.now().strftime('%A'))
+
 class WeatherApp:
     def __init__(self):
         # Klucz API OpenWeatherMap
         self.api_key = "b44ecf95a35963e3701437527cec0f2a"
-        # Styl czcionki dla interfejsu
-        self.font_style = ("Arial", 12)
-
+        
         # Inicjalizacja głównego okna tkinter
         self.root = tk.Tk()
         self.root.title("Pogódka")
-
         
         # Dane pogodowe
-        self.ui = WeatherAppUI(self.root, None, self.font_style)  
+        self.ui = WeatherAppUI(self.root, None, None)
+        self.weather_charts = WeatherCharts(None)
         self.weather_data = WeatherData(self.api_key, self.ui)
-
-        # Ustawienie ui w WeatherData po jego utworzeniu
         self.ui.weather_data = self.weather_data
+        self.weather_charts.weather_data = self.weather_data
+        self.ui.weather_charts = self.weather_charts
 
-        # Tworzenie interfejsu użytkownika
-        self.ui.create_widgets()
+        # Sprawdzenie, czy istnieje plik z ostatnią lokalizacją
+        if os.path.exists("last_location.txt"):
+            # Jeśli tak, wczytaj ostatnią lokalizację i pobierz aktualną prognozę
+            self.ui.load_last_location()
+            self.weather_data.get_weather(self.ui.entry.get())
+            self.weather_charts.plot_temperature_chart(datetime.now().strftime('%A'))
 
         # Inicjalizacja ikony
         self.icon_label = tk.Label(self.root)
@@ -439,10 +459,6 @@ class WeatherApp:
 
         # Inicjalizacja stylu
         self.style = ttk.Style()
-
-
-        # Ustawienie ui w WeatherData po jego utworzeniu
-        self.weather_data.ui = self.ui
 
         # Inicjalizacja atrybutu canvas
         self.canvas = None
@@ -475,17 +491,23 @@ class WeatherApp:
             forecast_frame.grid(row=7, column=i, padx=10, pady=10, sticky="nsew")
             self.forecast_frames.append(forecast_frame)
 
-        # Sprawdzenie, czy istnieje plik z ostatnią lokalizacją
+        # Inicjalizacja ikony
+        self.icon_label = tk.Label(self.root)
+        self.icon_image = None
+
+        # Tworzenie interfejsu użytkownika
+        self.ui.create_widgets()
+
+        # Wyświetlenie danych o bieżącej pogodzie i prognozie
         if os.path.exists("last_location.txt"):
-            # Jeśli tak, wczytaj ostatnią lokalizację i pobierz aktualną prognozę
-            self.ui.load_last_location()
-            self.weather_data.get_weather(self.ui.entry.get())
-            self.weather_data.weather_charts.plot_temperature_chart(datetime.now().strftime('%A'))
+            self.ui.display_current_weather()
+            self.ui.display_5_day_forecast()
+
+        self.weather_data.print_weather_data()
 
     def run(self):
-        # Uruchomienie głównej pętli aplikacji tkinter
         self.root.mainloop()
-
+        
 
 if __name__ == "__main__":
     # Uruchomienie aplikacji pogodowej
