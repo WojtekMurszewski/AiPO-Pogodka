@@ -1,0 +1,9 @@
+# Plik z ostatnią lokalizacją
+last_location.txt
+
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyz

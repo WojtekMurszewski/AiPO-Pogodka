@@ -11,11 +11,11 @@ class WeatherApp:
     def __init__(self):
         # Klucz API OpenWeatherMap
         self.api_key = "b44ecf95a35963e3701437527cec0f2a"
-        
+
         # Inicjalizacja głównego okna tkinter
         self.root = tk.Tk()
         self.root.title("Pogódka")
-        
+
         # Dane pogodowe
         self.ui = WeatherAppUI(self.root, None, None)
         self.weather_charts = WeatherCharts(None)
@@ -46,10 +46,10 @@ class WeatherApp:
         self.canvas = None
 
         # Konfiguracja kolumn w głównym oknie
-        self.root.columnconfigure(0, minsize=200, weight=0)
-        self.root.columnconfigure(1, minsize=220, weight=1)
-        self.root.columnconfigure(2, minsize=220, weight=1)
-        self.root.columnconfigure(3, minsize=220, weight=1)
+        self.root.columnconfigure(0, minsize=250, weight=0)  # Kolumna 0 (miejsce na polu wprowadzania danych)
+        self.root.columnconfigure(1, minsize=220, weight=1)  # Kolumna 1 (miejsce na przycisk Search)
+        self.root.columnconfigure(2, minsize=220, weight=1)  # Kolumna 2 (miejsce na ikonę)
+        self.root.columnconfigure(3, minsize=220, weight=1)  # Kolumna 3 (miejsce na ramkę prognozy)
         self.root.columnconfigure(4, minsize=0, weight=0)
 
         # Styl okna
