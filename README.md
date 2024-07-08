@@ -35,8 +35,11 @@ Run the application
 ## Tech Stack
 
 **Frontend:** Tkinter
+
 **Backend:** Python, Requests
+
 **Data Visualization:** Matplotlib
+
 **APIs:** Weather API
 
 ## Screenshots
